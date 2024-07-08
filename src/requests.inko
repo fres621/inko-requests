@@ -97,13 +97,22 @@ class pub HTTPRequest {
   let pub @method: HTTPMethod
   let pub @path: String
   let pub @headers: Map[String, String]
+  let pub @body: Option[String]
 
   fn pub mut set_header(header: String, value: String) {
     @headers.set(header, value)
   }
 
+  fn pub mut set_body(body: String) {
+    @body = Option.Some(body)
+  }
+
+  fn pub mut clear_body {
+    @body = Option.None
+  }
+
   fn pub static new(method: HTTPMethod, path: String) -> HTTPRequest {
-    HTTPRequest(method, path, Map.new)
+    HTTPRequest(method, path, Map.new, Option.None)
   }
 }
 
@@ -119,6 +128,9 @@ impl IntoString for HTTPRequest {
       buffer.push("\r\n")
     }
     buffer.push("\r\n")
+    if @body.some? {
+      buffer.push(@body.get)
+    }
     buffer.to_string
   }
 }
