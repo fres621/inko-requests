@@ -86,9 +86,9 @@ type pub HTTPResponse {
       }
     }
 
-    let len = headers.opt('content-length')
+    let len = headers.get('content-length')
 
-    if len.some? {
+    if len.ok? {
       # Find the first empty line
       let sep = response.byte_index('\r\n\r\n', 0)
       let content = response.substring(
@@ -111,7 +111,7 @@ type pub HTTPRequest {
   let pub @method: HTTPMethod
   let pub @path: String
   let pub @headers: Map[String, String]
-  let pub @body: Option[String]
+  let pub mut @body: Option[String]
 
   fn pub mut set_header(header: String, value: String) {
     @headers.set(header, value)
@@ -140,8 +140,7 @@ impl IntoString for HTTPRequest {
         with: ' ',
       ),
     )
-    @headers.iter.each
-    fn (entry) {
+    for entry in @headers.iter {
       buffer.push(entry.key)
       buffer.push(': ')
       buffer.push(entry.value)
@@ -151,7 +150,7 @@ impl IntoString for HTTPRequest {
 
     if @body.some? { buffer.push(@body.get) }
 
-    buffer.to_string
+    buffer.into_string
   }
 }
 
@@ -215,16 +214,16 @@ type pub URL {
     }
 
     # TODO We should just make port an Option[Int] instead of defaulting to 80 if it's missing, or maybe use a per-protocol default (443 for wss, 80 for http)
-    if port.size == 0 { port.push('80') }
+    if port.empty? { port.push('80') }
 
-    if pathname.size == 0 { pathname.push('/') }
+    if pathname.empty? { pathname.push('/') }
 
-    let port_int = Int.parse(port.to_string, Format.Decimal)
+    let port_int = Int.parse(port.into_string, Format.Decimal)
 
     if port_int.none? {
       Result.Error(ErrorKind.PORTINVALID)
     } else {
-      Result.Ok(URL(hostname.to_string, port_int.get, pathname.to_string))
+      Result.Ok(URL(hostname.into_string, port_int.get, pathname.into_string))
     }
   }
 }
@@ -243,9 +242,9 @@ fn pub host_by_name(hostname: String) -> Option[IpAddress] {
     case Ok(ips) -> {
       match ips.empty? {
         case true -> Option.None
-        case false -> ips.get(0).get
+        case false -> Option.Some(ips.get(0).get)
       }
     }
-    case Error -> Option.None
+    case Error(_) -> Option.None
   }
 }
