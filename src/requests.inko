@@ -1,14 +1,13 @@
 # Requests
-# 
+#
 # This module exports several utility classes and methods for interacting with the Internet
-import std.cmp(Equal)
-import std.net.ip(IpAddress)
-import std.string(IntoString, StringBuffer)
-import std.int(Format)
+import std.cmp (Equal)
+import std.int (Format)
+import std.net.dns (Resolver)
+import std.net.ip (IpAddress)
+import std.string (IntoString, StringBuffer)
 
-import dns(DNSResolver)
-
-class pub enum HTTPMethod {
+type pub enum HTTPMethod {
   case GET
   case POST
   case PUT
@@ -21,18 +20,18 @@ class pub enum HTTPMethod {
 impl IntoString for HTTPMethod {
   fn pub move into_string -> String {
     match self {
-      case GET      -> "GET"
-      case POST     -> "POST"
-      case PUT      -> "PUT"
-      case PATCH    -> "PATCH"
-      case DELETE   -> "DELETE"
-      case OPTIONS  -> "OPTIONS"
-      case HEAD     -> "HEAD"
+      case GET -> 'GET'
+      case POST -> 'POST'
+      case PUT -> 'PUT'
+      case PATCH -> 'PATCH'
+      case DELETE -> 'DELETE'
+      case OPTIONS -> 'OPTIONS'
+      case HEAD -> 'HEAD'
     }
   }
 }
 
-class pub HTTPStatus {
+type pub HTTPStatus {
   let pub @code: Int
   let pub @message: String
 
@@ -47,53 +46,68 @@ class pub HTTPStatus {
   fn pub static from_line(line: String) -> HTTPStatus {
     # Example line: HTTP/1.1 426 Upgrade Required
     # The number 9 within this method refers to the length of the string "HTTP/1.1 " which should always be the beginning of a line
-    let sep_index = line.byte_index(" ", starting_at: 9).get
+    let sep_index = line.byte_index(' ', starting_at: 9).get
     let code = line.substring(9, sep_index - 9)
     let message = line.substring(sep_index + 1, line.size - code.size - 9)
+
     HTTPStatus(Int.parse(code, Format.Decimal).get, message)
   }
 }
 
-class pub HTTPResponse {
+type pub HTTPResponse {
   let pub @headers: Map[String, String]
   let pub @status: HTTPStatus
   let pub @content: Option[String]
 
   fn pub static parse(response: String) -> HTTPResponse {
-    let iter = response.split("\r\n")
+    let iter = response.split('\r\n')
     let status_line = iter.next
     let headers: Map[String, String] = Map.new
+
     loop {
       match iter.next {
         case Some(line) -> {
-          if line.empty? {
-            break
-          }
+          if line.empty? { break }
+
           let separator_index_opt = line.byte_index(': ', 0)
-          if separator_index_opt.none? {
-            next
-          }
+
+          if separator_index_opt.none? { next }
+
           let separator_index = separator_index_opt.get
           let key = line.substring(0, separator_index)
-          let value = line.substring(separator_index + 2 , line.size - key.size - 2)
+          let value = line.substring(
+            separator_index + 2,
+            line.size - key.size - 2,
+          )
+
           headers.set(key.to_lower, value)
         }
         case _ -> break
       }
     }
-    let len = headers.opt("content-length")
+
+    let len = headers.opt('content-length')
+
     if len.some? {
       # Find the first empty line
-      let sep = response.byte_index("\r\n\r\n", 0)
-      let content = response.substring(sep.get - 3, Int.parse(len.get, Format.Decimal).get)
-      HTTPResponse(headers, HTTPStatus.from_line(status_line.get), Option.Some(content))
+      let sep = response.byte_index('\r\n\r\n', 0)
+      let content = response.substring(
+        sep.get - 3,
+        Int.parse(len.get, Format.Decimal).get,
+      )
+
+      HTTPResponse(
+        headers,
+        HTTPStatus.from_line(status_line.get),
+        Option.Some(content),
+      )
     } else {
       HTTPResponse(headers, HTTPStatus.from_line(status_line.get), Option.None)
     }
   }
 }
 
-class pub HTTPRequest {
+type pub HTTPRequest {
   let pub @method: HTTPMethod
   let pub @path: String
   let pub @headers: Map[String, String]
@@ -120,34 +134,40 @@ impl IntoString for HTTPRequest {
   fn pub move into_string -> String {
     let buffer = StringBuffer.new
     # TODO Test performance with this method vs `@method.into_string + " " + @path + " HTTP/1.1\n"`
-    buffer.push(String.join([@method.into_string, @path, "HTTP/1.1\r\n"].into_iter, with: " "))
-    @headers.iter.each fn (entry) {
+    buffer.push(
+      String.join(
+        [@method.into_string, @path, 'HTTP/1.1\r\n'].into_iter,
+        with: ' ',
+      ),
+    )
+    @headers.iter.each
+    fn (entry) {
       buffer.push(entry.key)
-      buffer.push(": ")
+      buffer.push(': ')
       buffer.push(entry.value)
-      buffer.push("\r\n")
+      buffer.push('\r\n')
     }
-    buffer.push("\r\n")
-    if @body.some? {
-      buffer.push(@body.get)
-    }
+    buffer.push('\r\n')
+
+    if @body.some? { buffer.push(@body.get) }
+
     buffer.to_string
   }
 }
 
 # Errors while parsing an URL
-class pub enum ErrorKind {
+type pub enum ErrorKind {
   case PORTINVALID
 }
 
 # TODO Parse protocol as well
-class enum ParseState {
+type enum ParseState {
   case HOSTNAME
   case PORT
   case PATHNAME
 }
 
-impl Equal[ref ParseState] for ParseState {
+impl Equal for ParseState {
   fn pub ==(other: ref ParseState) -> Bool {
     match (self, other) {
       case (HOSTNAME, HOSTNAME) -> true
@@ -158,13 +178,13 @@ impl Equal[ref ParseState] for ParseState {
   }
 }
 
-class pub URL {
+type pub URL {
   let pub @hostname: String
   let pub @port: Int
   let pub @pathname: String
 
   fn pub host -> String {
-    @hostname + ":" + @port.to_string
+    @hostname + ':' + @port.to_string
   }
 
   fn pub static parse(resource: String) -> Result[URL, ErrorKind] {
@@ -173,15 +193,17 @@ class pub URL {
     let mut port = StringBuffer.new
     let mut pathname = StringBuffer.new
     let chars = resource.chars
+
     loop {
       match chars.next {
         case Some(char) -> {
-          if char == ":" and state == ParseState.HOSTNAME {
+          if char == ':' and state == ParseState.HOSTNAME {
             state = ParseState.PORT
             next
-          } else if char == "/" {
+          } else if char == '/' {
             state = ParseState.PATHNAME
           }
+
           match ref state {
             case HOSTNAME -> hostname.push(char)
             case PORT -> port.push(char)
@@ -191,14 +213,14 @@ class pub URL {
         case _ -> break
       }
     }
+
     # TODO We should just make port an Option[Int] instead of defaulting to 80 if it's missing, or maybe use a per-protocol default (443 for wss, 80 for http)
-    if port.size == 0 {
-      port.push("80")
-    }
-    if pathname.size == 0 {
-      pathname.push("/")
-    }
+    if port.size == 0 { port.push('80') }
+
+    if pathname.size == 0 { pathname.push('/') }
+
     let port_int = Int.parse(port.to_string, Format.Decimal)
+
     if port_int.none? {
       Result.Error(ErrorKind.PORTINVALID)
     } else {
@@ -207,21 +229,23 @@ class pub URL {
   }
 }
 
-# TODO 
+# For convenience and mantaining previous functionality although this isn't really needed
 fn pub host_by_name(hostname: String) -> Option[IpAddress] {
   let as_ip = IpAddress.parse(hostname)
-  if as_ip.some? {
-    return as_ip
-  }
-  if hostname == "localhost" {
-    return Option.Some(IpAddress.v4(127, 0, 0, 1))
-  }
-  let resolved = DNSResolver.new.resolve(hostname)
-  let ad = resolved.address
-  # I should make DNSResolver address be an Option instead of returning 0.0.0.0
-  if ad == IpAddress.v4(0, 0, 0, 0) {
-    Option.None
-  } else {
-    Option.Some(ad.clone)
+
+  if as_ip.some? { return as_ip }
+
+  if hostname == 'localhost' { return Option.Some(IpAddress.v4(127, 0, 0, 1)) }
+
+  let resolved = Resolver.new.resolve(hostname)
+
+  match resolved {
+    case Ok(ips) -> {
+      match ips.empty? {
+        case true -> Option.None
+        case false -> ips.get(0).get
+      }
+    }
+    case Error -> Option.None
   }
 }
